@@ -1,0 +1,4 @@
+chromadb
+mysql-connector-python
+scikit-learn
+numpy
