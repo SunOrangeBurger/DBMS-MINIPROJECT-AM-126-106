@@ -1,4 +1,4 @@
-# AutoCare — Vehicle Service & Maintenance Management System
+# AutoCare — Vehicle Service & Maintenance Management System 
 
 A database-driven system for managing customers, vehicles, service
 appointments, mechanics, spare parts, billing, and service history at
