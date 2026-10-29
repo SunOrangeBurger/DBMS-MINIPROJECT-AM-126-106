@@ -101,17 +101,46 @@ docstring at the top of the file for details.
 | Second database paradigm (vector) justified | `docs/DESIGN_DOCUMENT.md` §4, §10; `vector/semantic_search.py` |
 | Data validation/integrity at DB level | CHECK constraints, triggers rejecting overselling stock (`sql/01_schema.sql`, `sql/05_triggers.sql`) |
 | Security basics | Passwords stored as hashes only (`users.password_hash`), no plaintext credentials in code — see `vector/semantic_search.py` env-var usage |
+| Full-stack Web Application | `frontend/` (Next.js 16 + React 19 App Router) with Admin, Staff, and Customer portals |
+| Integrated Semantic Search UI | `frontend/src/components/SemanticSearchLab.tsx` and Mechanic Workbench |
 
-**Not yet built (next phase):** Next.js frontend, API routes,
-authentication middleware, role-based UI. The `users.role` column and
-1:1 `customers`/`mechanics` profile tables are already designed to
-support Admin / Staff(Mechanic) / Customer roles when that phase
-begins.
+## Full-Stack Web Application (Completed)
+
+The Next.js application in `frontend/` binds to `0.0.0.0:3000` for seamless access on both **localhost** and across the local **WiFi/LAN network**.
+
+### Running the App:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Access Endpoints:
+- **Localhost**: `http://localhost:3000`
+- **WiFi / Network**: `http://10.1.25.99:3000` (or your local IP displayed on the header banner)
+
+### Default Credentials:
+- **Admin**: Username: `Admin` (or `admin@autocare.com`), Password: `Admin123`
+- **Staff / Mechanic**: e.g., `anitha.staff@autocare.com`, Password: `Admin123`
+- **Customer**: e.g., `arjun@example.com`, Password: `Admin123`
+- *Note:* A 1-click **Quick Switch Role** modal is built directly into the UI header for instant role switching.
+
+### Optional: Populating Local MySQL 8.4 Server:
+If you wish to run the app directly against your local MySQL server instead of the fallback repository:
+```bash
+sudo mysql < sql/01_schema.sql
+sudo mysql < sql/02_sample_data.sql
+sudo mysql < sql/03_views.sql
+sudo mysql < sql/04_procedures.sql
+sudo mysql < sql/05_triggers.sql
+```
+And grant privileges to `autocare_app` (or configure your credentials in `frontend/.env`). The application detects MySQL on startup and dynamically connects.
 
 ## Verification
 
-Every SQL file and the vector search script were executed against a
-live server during development (not just written) — see
-`docs/DESIGN_DOCUMENT.md` §9 for the specific test cases run
-(trigger rejection on overselling stock, transaction rollback
-proof, stored procedure error handling, semantic search accuracy).
+Every SQL file, the vector search script, and the Next.js full-stack application were verified end-to-end:
+- **Build**: Successfully compiles with TypeScript and Turbopack (`npm run build`).
+- **Trigger Integrity**: Verified stock auto-deduction, overselling rejection, and real-time loyalty point awards upon invoice payment.
+- **Stored Procedures**: Verified `sp_book_appointment` and `sp_complete_appointment_and_bill` labor/parts/tax calculation.
+- **Semantic Vector Search**: Tested free-text queries retrieving past diagnoses by meaning.
+- **Network Hosting**: Tested multi-device accessibility via `0.0.0.0` binding.
