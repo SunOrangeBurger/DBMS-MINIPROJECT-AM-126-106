@@ -1,146 +1,83 @@
-# AutoCare — Vehicle Service & Maintenance Management System 
+# AutoCare — Vehicle Service & Maintenance Management
 
-A database-driven system for managing customers, vehicles, service
-appointments, mechanics, spare parts, billing, and service history at
-a vehicle service center.
-
-This repository currently covers the **database layer**: a MySQL
-relational schema plus a Chroma vector-search layer for semantic
-search over service complaint/diagnosis notes. The Next.js web
-application is planned for a later phase.
-
-## Project structure
+MySQL (relational) + Chroma (vector search) + a Next.js web app with three role-based portals
+(customer, mechanic/staff, admin).
 
 ```
-autocare/
-├── sql/
-│   ├── 01_schema.sql              # DDL: tables, keys, constraints, indexes
-│   ├── 02_sample_data.sql         # Sample DML (INSERT) data for demo/testing
-│   ├── 03_views.sql               # 4 views
-│   ├── 04_procedures.sql          # 2 stored procedures + 1 function
-│   ├── 05_triggers.sql            # 4 triggers
-│   ├── 06_transactions_demo.sql   # Transaction atomicity demo (commit + rollback)
-│   └── 07_queries.sql             # JOIN / GROUP BY / HAVING / subquery examples
-├── vector/
-│   ├── semantic_search.py         # Chroma-based semantic search over service notes
-│   └── requirements.txt
-└── docs/
-    ├── DESIGN_DOCUMENT.md         # Problem statement, objectives, design decisions
-    └── DATA_DICTIONARY.md         # Column-level reference for every table
+sql/        DDL, sample data, views, procedures, triggers, transactions, queries  (00_install_all.sql runs everything)
+vector/     Python FastAPI + Chroma semantic search over complaint / diagnosis notes
+frontend/   Next.js 16 app: UI + API routes (all DB access is server-side)
+docs/       Design document, data dictionary, ER diagram, architecture diagram
 ```
 
-## Prerequisites
+## Run it (about 10 minutes)
 
-- MySQL 8.0+ (developed/tested against MySQL 8.4 syntax; verified to
-  run correctly on MariaDB 10.11 as well)
-- Python 3.10+ (for the vector search component)
+You need: **MySQL 8+**, **Node 20+**, **Python 3.10+**.
 
-## Setup — MySQL
-
-```bash
-mysql -u root -p < sql/01_schema.sql
-mysql -u root -p < sql/02_sample_data.sql
-mysql -u root -p < sql/03_views.sql
-mysql -u root -p < sql/04_procedures.sql
-mysql -u root -p < sql/05_triggers.sql
-```
-
-Run the transaction demo and query examples separately, once the
-schema and data are in place:
-
-```bash
-mysql -u root -p autocare < sql/06_transactions_demo.sql
-mysql -u root -p autocare < sql/07_queries.sql
-```
-
-Create an application-level DB user rather than using `root` day to
-day (never hard-code credentials in application code — use
-environment variables):
+### 1. Database
+Open the MySQL client from the **repo root** (`mysql -u root -p`) and run:
 
 ```sql
-CREATE USER 'autocare_app'@'%' IDENTIFIED BY 'choose-a-strong-password';
-GRANT ALL PRIVILEGES ON autocare.* TO 'autocare_app'@'%';
+source sql/00_install_all.sql;
+
+CREATE USER 'autocare_app'@'localhost' IDENTIFIED BY 'ChooseAPassword1';
+GRANT ALL PRIVILEGES ON autocare.* TO 'autocare_app'@'localhost';
 FLUSH PRIVILEGES;
 ```
+(Use `source` inside the client — PowerShell does not support `mysql < file`.)
 
-## Setup — vector semantic search
+### 2. Web app
+```bash
+cd frontend
+cp .env.example .env.local        # Windows: copy .env.example .env.local
+```
+Edit `.env.local`: set `DB_PASSWORD` to the password above and `SESSION_SECRET` to a random string of 32+ characters
+(`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`).
 
+```bash
+npm install
+npm run seed      # sets real bcrypt hashes for the demo accounts (password: Admin123)
+npm run dev       # http://localhost:3000
+```
+
+### 3. Semantic search (second terminal; optional but needed for the vector-DB demo)
 ```bash
 cd vector
 pip install -r requirements.txt
-
-export DB_HOST=127.0.0.1
-export DB_USER=autocare_app
-export DB_PASSWORD='choose-a-strong-password'
-export DB_NAME=autocare
-
-python3 semantic_search.py
+# macOS/Linux:  export DB_USER=autocare_app DB_PASSWORD='ChooseAPassword1' DB_NAME=autocare
+# PowerShell:   $env:DB_USER="autocare_app"; $env:DB_PASSWORD="ChooseAPassword1"; $env:DB_NAME="autocare"
+python -m uvicorn service:app --port 8001
 ```
+First start downloads the MiniLM model (internet needed once). Then use **Reindex** in the admin Reports tab, or just search.
+Check it: open http://127.0.0.1:8001/health — `embedding_model` must be `all-MiniLM-L6-v2` and `degraded` must be `false`
+(if it says `tfidf-fallback` the model download failed and search is only keyword-like). `python selftest.py` runs 4 meaning-only queries.
+Weak matches below `MIN_SIMILARITY` (default 0.2) are hidden; set the env var to change it.
 
-This builds a Chroma collection from `service_appointments`
-complaint/diagnosis text and runs three demo similarity queries.
+### 4. Check everything works
+With the app running: `cd frontend && npm run test:api` — prints PASS/FAIL for ~20 end-to-end checks
+(auth, roles, triggers, procedures, invoice maths, search).
 
-**Note on embeddings:** `semantic_search.py` includes an offline
-TF-IDF embedding fallback (`TfidfEmbeddingFunction`) used during
-development in a network-restricted sandbox. On a normal machine with
-internet access, switch to `get_default_embedding_function()` in that
-file (Chroma's built-in `all-MiniLM-L6-v2` sentence-transformer) for
-genuine semantic — not just keyword-overlap — similarity. See the
-docstring at the top of the file for details.
+### Demo logins (password `Admin123`)
+| Role | Email |
+|---|---|
+| Admin | `admin@autocare.com` |
+| Mechanic | `anitha.staff@autocare.com` |
+| Customer | `arjun@example.com` |
 
-## What's demonstrated (mapped to project rubric)
-
+## What maps to the guidelines
 | Requirement | Where |
 |---|---|
-| ER diagram + relational schema | `docs/DESIGN_DOCUMENT.md` (§5–6), `sql/01_schema.sql` |
-| Entities, attributes, PK/FK, relationships, constraints | `docs/DATA_DICTIONARY.md` |
-| DDL: CREATE / ALTER / DROP, PK/FK, constraints, indexes, views | `sql/01_schema.sql`, `sql/03_views.sql` |
-| DML: INSERT / UPDATE / DELETE / SELECT | `sql/02_sample_data.sql`, `sql/07_queries.sql` |
-| JOIN, GROUP BY, HAVING, ORDER BY, aggregates, subqueries | `sql/07_queries.sql` (12 worked examples) |
-| ≥4 advanced features | 5 implemented: views, procedures/functions, triggers, transactions, indexing (incl. FULLTEXT) — see `docs/DESIGN_DOCUMENT.md` §7 |
-| Second database paradigm (vector) justified | `docs/DESIGN_DOCUMENT.md` §4, §10; `vector/semantic_search.py` |
-| Data validation/integrity at DB level | CHECK constraints, triggers rejecting overselling stock (`sql/01_schema.sql`, `sql/05_triggers.sql`) |
-| Security basics | Passwords stored as hashes only (`users.password_hash`), no plaintext credentials in code — see `vector/semantic_search.py` env-var usage |
-| Full-stack Web Application | `frontend/` (Next.js 16 + React 19 App Router) with Admin, Staff, and Customer portals |
-| Integrated Semantic Search UI | `frontend/src/components/SemanticSearchLab.tsx` and Mechanic Workbench |
+| ER diagram, relational schema | `docs/ER_diagram.png`, `docs/Relational_Schema.png`, `docs/DESIGN_DOCUMENT.md`, `sql/01_schema.sql` |
+| DDL / DML / queries | `sql/01`–`07`, `08_alter_and_extensions.sql` |
+| ≥4 advanced features | views, stored procedures + function, triggers (8), transactions, indexes incl. FULLTEXT |
+| Vector DB + justification | `vector/`, `docs/DESIGN_DOCUMENT.md` §4, §10 |
+| Web UI + API layer | `frontend/src/app`, `frontend/src/app/api` |
+| Role-based auth (3 roles) | signed httpOnly cookie, `route()` wrapper in `frontend/src/lib/api.ts` |
+| DB-level validation | CHECK constraints, triggers (stock, double-booking, odometer), procedures with SIGNAL |
+| Security | bcrypt hashes, env-var credentials, parameterised queries, login throttle, ownership checks |
+| Architecture | `docs/architecture.png` |
 
-## Full-Stack Web Application (Completed)
-
-The Next.js application in `frontend/` binds to `0.0.0.0:3000` for seamless access on both **localhost** and across the local **WiFi/LAN network**.
-
-### Running the App:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Access Endpoints:
-- **Localhost**: `http://localhost:3000`
-- **WiFi / Network**: `http://10.1.25.99:3000` (or your local IP displayed on the header banner)
-
-### Default Credentials:
-- **Admin**: Username: `Admin` (or `admin@autocare.com`), Password: `Admin123`
-- **Staff / Mechanic**: e.g., `anitha.staff@autocare.com`, Password: `Admin123`
-- **Customer**: e.g., `arjun@example.com`, Password: `Admin123`
-- *Note:* A 1-click **Quick Switch Role** modal is built directly into the UI header for instant role switching.
-
-### Optional: Populating Local MySQL 8.4 Server:
-If you wish to run the app directly against your local MySQL server instead of the fallback repository:
-```bash
-sudo mysql < sql/01_schema.sql
-sudo mysql < sql/02_sample_data.sql
-sudo mysql < sql/03_views.sql
-sudo mysql < sql/04_procedures.sql
-sudo mysql < sql/05_triggers.sql
-```
-And grant privileges to `autocare_app` (or configure your credentials in `frontend/.env`). The application detects MySQL on startup and dynamically connects.
-
-## Verification
-
-Every SQL file, the vector search script, and the Next.js full-stack application were verified end-to-end:
-- **Build**: Successfully compiles with TypeScript and Turbopack (`npm run build`).
-- **Trigger Integrity**: Verified stock auto-deduction, overselling rejection, and real-time loyalty point awards upon invoice payment.
-- **Stored Procedures**: Verified `sp_book_appointment` and `sp_complete_appointment_and_bill` labor/parts/tax calculation.
-- **Semantic Vector Search**: Tested free-text queries retrieving past diagnoses by meaning.
-- **Network Hosting**: Tested multi-device accessibility via `0.0.0.0` binding.
+## Honest status
+The SQL, API and UI were written and type-checked, and the session/validation/error-mapping logic is unit-tested,
+but the full stack could not be executed in the authoring environment (no MySQL/npm access). Run
+`npm run test:api` first after setup and fix/report anything marked FAIL before the demo.

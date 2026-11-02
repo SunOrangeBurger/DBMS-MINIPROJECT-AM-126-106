@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server';
-import { getDbStatus } from '@/lib/db';
+import { queryOne } from '@/lib/db';
+import { toHttpError } from '@/lib/errors';
+import { vectorHealth } from '@/lib/vector';
 
+// Public health check shown on the login page (helps with first-run problems)
 export async function GET() {
-  const dbStatus = await getDbStatus();
-  return NextResponse.json({
-    status: 'online',
-    appName: process.env.NEXT_PUBLIC_APP_NAME || 'AutoCare Workshop Management',
-    hostIp: process.env.NEXT_PUBLIC_HOST_IP || '10.1.25.99',
-    port: process.env.PORT || 3000,
-    database: dbStatus,
-  });
+  let db: { ok: boolean; message?: string } = { ok: true };
+  try {
+    await queryOne('SELECT 1 AS ok');
+    const procs = await queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM information_schema.routines
+        WHERE routine_schema = DATABASE() AND routine_name = 'sp_register_customer'`
+    );
+    if (!procs || Number(procs.n) === 0) {
+      db = { ok: false, message: 'Database found, but the extra stored procedures are missing. Re-run sql/00_install_all.sql.' };
+    }
+  } catch (err) {
+    db = { ok: false, message: toHttpError(err).message };
+  }
+  const vector = await vectorHealth();
+  return NextResponse.json({ db, vector });
 }

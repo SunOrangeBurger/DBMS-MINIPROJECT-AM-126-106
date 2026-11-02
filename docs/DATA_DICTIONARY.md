@@ -113,3 +113,9 @@
 | idx_mechanic_specialization | mechanics | specialization | Find mechanics by skill |
 | idx_part_stock | spare_parts | stock_qty | Low-stock scans |
 | idx_appt_notes_fts | service_appointments | complaint_notes, diagnosis_notes | FULLTEXT keyword search |
+
+## Additions in `sql/08_alter_and_extensions.sql`
+- `service_appointments.priority` — urgency level, CHECK-constrained.
+- `users.last_login_at` — set on successful sign-in.
+- `appointment_status_log(log_id, appointment_id FK, old_status, new_status, changed_at)` — filled by trigger `trg_log_appointment_status`.
+- `part_restock_log(restock_id, part_id FK, quantity_added, restocked_at)` — filled by `sp_restock_part`.

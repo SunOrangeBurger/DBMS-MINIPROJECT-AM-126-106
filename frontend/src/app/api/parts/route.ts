@@ -1,21 +1,14 @@
-import { NextResponse } from 'next/server';
-import { getAllSpareParts, restockPart } from '@/lib/db';
+import { route } from '@/lib/api';
+import { query } from '@/lib/db';
 
-export async function GET() {
-  const parts = await getAllSpareParts();
-  return NextResponse.json(parts);
-}
-
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { part_id, amount } = body;
-    if (!part_id || !amount) {
-      return NextResponse.json({ error: 'part_id and amount are required' }, { status: 400 });
-    }
-    const updated = await restockPart(Number(part_id), Number(amount));
-    return NextResponse.json(updated);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
-  }
-}
+// Read-only stock list for staff and admin
+export const GET = route(
+  async () => ({
+    parts: await query(
+      `SELECT part_id, part_name, part_code, unit_price, stock_qty, reorder_level,
+              (stock_qty <= reorder_level) AS is_low
+         FROM spare_parts ORDER BY part_name`
+    ),
+  }),
+  { roles: ['admin', 'staff'] }
+);

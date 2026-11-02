@@ -1,4 +1,6 @@
-chromadb
-mysql-connector-python
-scikit-learn
+chromadb>=0.5
+mysql-connector-python>=8.4
+scikit-learn>=1.4
 numpy
+fastapi>=0.110
+uvicorn>=0.29

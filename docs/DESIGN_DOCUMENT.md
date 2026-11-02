@@ -1,190 +1,257 @@
 # AutoCare — Vehicle Service & Maintenance Management System
-## Database Design Document (Level 3 DBMS Project)
+## Project Documentation (DBMS Level 3 Project)
+
+**Database option chosen: Option 2 — SQL (MySQL, mandatory) + Vector Database (Chroma).**
+Team of 2. Stack: Next.js 16 (UI + API route handlers) · MySQL 8 · Chroma via a small FastAPI service · Git/GitHub.
+
+Contents: 1 Problem statement · 2 Objectives · 3 Scope · 4 Functional requirements · 5 Database choice and justification ·
+6 ER diagram · 7 Relational schema · 8 Entities, keys, relationships, constraints · 9 SQL implementation · 10 Vector database design ·
+11 Important queries · 12 System architecture · 13 Application screenshots · 14 Testing results · 15 Conclusion and future enhancements
 
 ---
 
-## 1. Problem Statement
+## 1. Problem statement
 
-Independent vehicle service centers typically manage customer records,
-job cards, spare-part stock, and billing on paper or in disconnected
-spreadsheets. This causes duplicated data entry, no visibility into
-which mechanic is overloaded, stockouts discovered only when a part is
-needed mid-job, and no way to learn from past diagnoses when a new
-customer describes a similar-sounding problem in different words.
+Independent vehicle service centres usually run on paper or disconnected spreadsheets. That causes duplicate data entry, no
+visibility into which mechanic is overloaded or double-booked, stock-outs discovered mid-job, billing mistakes, and no way to learn
+from past diagnoses: when a customer describes a fault in new words ("screech when slowing down"), staff cannot find the earlier job
+that was "squeaking noise when braking", because keyword search only matches shared vocabulary.
 
-AutoCare centralizes this into one relational system, and augments it
-with a semantic search layer so staff can retrieve **similar past
-complaints/diagnoses even when the customer's wording doesn't match
-historical records exactly** — a genuine limitation of pure SQL
-(`LIKE`/full-text search only matches shared vocabulary, not meaning).
+AutoCare puts customers, vehicles, appointments, mechanics, spare parts and billing in one relational database, enforces the business
+rules inside the database, and adds a vector index over the free-text complaint/diagnosis notes so staff can retrieve similar past
+cases by meaning.
 
 ## 2. Objectives
 
-- Maintain a single source of truth for customers, vehicles, mechanics,
-  parts inventory, appointments, and billing.
-- Enforce data integrity at the database level (not just in application
-  code) — valid foreign keys, non-negative stock/prices, no overselling
-  of parts.
-- Automate repetitive, error-prone bookkeeping (stock deduction,
-  invoice totals, loyalty points) using triggers and stored procedures
-  rather than scattering that logic across application code.
-- Provide semantic ("similar issue") search over free-text complaint
-  and diagnosis notes, which structured columns/full-text search cannot
-  do well.
+- One source of truth for customers, vehicles, mechanics, parts, appointments and invoices.
+- Enforce integrity in the database itself (keys, CHECKs, triggers, procedures), not only in application code.
+- Automate bookkeeping: stock deduction, invoice totals, loyalty points, status history.
+- Role-based web application for customers, mechanics (staff) and admins.
+- Semantic retrieval of similar past issues, justified against plain keyword search.
 
 ## 3. Scope
 
-**In scope (this phase):** relational schema, sample data, views,
-stored procedures/functions, triggers, transactions, indexing
-(including full-text), and a vector-search prototype over service
-notes.
+**In scope:** relational schema, DDL/DML, views, stored procedures and a function, triggers, transactions, indexes and FULLTEXT;
+Chroma semantic search; Next.js web application with authentication and three roles; API layer; documentation and tests.
 
-**Out of scope (this phase, planned for later):** the Next.js web
-application, its API layer, and authentication middleware. The
-`users` table and `role` column are already designed to support this
-so the next phase is additive, not a redesign.
+**Out of scope:** online payment gateway, SMS/e-mail notifications, multi-branch support, mobile app.
 
-## 4. Why two database paradigms (justification)
+## 4. Functional requirements
 
-| Data | Best-fit paradigm | Why |
+| ID | Requirement | Role |
 |---|---|---|
-| Customers, vehicles, appointments, parts, invoices | **Relational (MySQL)** | Highly structured, strongly related (foreign keys), needs transactional guarantees (stock deduction + billing must be atomic), and needs precise aggregate reporting (revenue by month, by mechanic). |
-| Complaint/diagnosis free text | **Vector DB (Chroma)** | Unstructured natural language where two write-ups of the *same* underlying issue can share almost no vocabulary ("weird noise when braking" vs. "grinding sound near the wheel"). A relational `LIKE`/FULLTEXT match is keyword-based and misses this; a vector embedding captures semantic similarity so mechanics can find precedent regardless of phrasing. |
+| F1 | Register, sign in, sign out; passwords stored as bcrypt hashes; sessions via signed httpOnly cookie | all |
+| F2 | Add / update odometer / delete own vehicles | customer |
+| F3 | Book a service appointment with complaint text; cancel while scheduled | customer |
+| F4 | View own appointments, invoices; pay an invoice | customer |
+| F5 | See assigned jobs; start a job; record diagnosis; add / remove parts used; finish job (invoice generated) | mechanic |
+| F6 | View stock levels and low-stock parts | mechanic, admin |
+| F7 | Search similar past issues (semantic, keyword, hybrid) | mechanic, admin |
+| F8 | Dashboard KPIs; manage all appointments; assign mechanics (double-booking blocked); cancel | admin |
+| F9 | Billing: list invoices, mark paid (loyalty points awarded) | admin |
+| F10 | Inventory: add parts, restock, remove unused parts | admin |
+| F11 | User management: create staff, activate / deactivate accounts | admin |
+| F12 | 12 whitelisted analytical reports (revenue per month, mechanic workload, top parts, …) | admin |
+| F13 | Rebuild the vector index from MySQL | admin |
 
-This is a genuine two-paradigm justification, not a "use NoSQL because
-it's required" justification — the structured data stays relational
-specifically *because* it benefits from constraints and joins, and only
-the free-text portion moves to a vector store.
+## 5. Database choice and justification
 
-## 5. Entities, attributes, keys (summary — full DDL in `sql/01_schema.sql`)
+| Data | Paradigm | Why |
+|---|---|---|
+| Customers, vehicles, appointments, parts, invoices, users | **MySQL (relational)** | Highly structured and interrelated (foreign keys); stock deduction + billing must be atomic (transactions); precise aggregates needed (revenue, workload). |
+| Complaint / diagnosis free text | **Chroma (vector)** | Unstructured language: two descriptions of one fault can share almost no words. A sentence embedding captures meaning, so similar past cases are found regardless of phrasing. FULLTEXT cannot do this. |
 
-| Entity | Primary Key | Notable Foreign Keys | Notable Constraints |
-|---|---|---|---|
-| `users` | user_id | — | UNIQUE(email), role ENUM |
-| `customers` | customer_id | user_id → users | UNIQUE(user_id), loyalty_points ≥ 0 |
-| `mechanics` | mechanic_id | user_id → users | UNIQUE(user_id), hourly_rate ≥ 0 |
-| `vehicles` | vehicle_id | customer_id → customers | UNIQUE(registration_no), year range check |
-| `service_types` | service_type_id | — | UNIQUE(name), base_price ≥ 0 |
-| `spare_parts` | part_id | — | UNIQUE(part_code), stock_qty ≥ 0 |
-| `service_appointments` | appointment_id | vehicle_id, service_type_id | completed_date ≥ scheduled_date |
-| `appointment_mechanics` | (appointment_id, mechanic_id) | both FKs | composite PK = M:M junction |
-| `appointment_parts` | (appointment_id, part_id) | both FKs | quantity_used > 0, composite PK = M:M junction |
-| `invoices` | invoice_id | appointment_id | UNIQUE(appointment_id) = 1:1, amounts ≥ 0 |
+The structured data stays relational because it benefits from constraints and joins; only the free-text moves to a vector store, and the
+vector store keeps just ids + metadata so MySQL remains the source of truth. The Search page lets a user run the same query with Semantic,
+Keyword and Hybrid modes to demonstrate the difference.
 
-Full column-level data dictionary: see `docs/DATA_DICTIONARY.md`.
+## 6. ER diagram
 
-## 6. Relationships
+![ER diagram](ER_diagram.png)
 
-- **Customer 1 — M Vehicle**: one customer can own many vehicles.
-- **Vehicle 1 — M ServiceAppointment**: one vehicle has a history of many appointments.
-- **ServiceType 1 — M ServiceAppointment**: one service type (e.g. "Oil Change") is used in many appointments.
-- **ServiceAppointment M — M Mechanic**: via `appointment_mechanics` — supports multiple mechanics per job (lead + assistants).
-- **ServiceAppointment M — M SparePart**: via `appointment_parts` — supports multiple parts per job, with quantity and a **price snapshot at time of use** (so a later price change doesn't retroactively alter historical invoices — an important real-world billing-accuracy decision).
-- **ServiceAppointment 1 — 1 Invoice**: each appointment bills exactly once.
-- **User 1 — 1 Customer** / **User 1 — 1 Mechanic**: role-specific profile data is kept out of the shared `users` table to avoid a wide table full of nullable columns; this is a deliberate normalization choice (see §8).
+Chen notation. `users` is specialised into `customers` and `mechanics` by 1:1 profile tables. The two M:N relationships (`assigned_to`,
+`uses`) carry their own attributes and become junction tables in the relational schema.
 
-## 7. Advanced database features implemented (5 — exceeds the 4 minimum)
+## 7. Relational schema
 
-| # | Feature | Where | Purpose |
-|---|---|---|---|
-| 1 | **Views** | `sql/03_views.sql` | `vw_service_history` (full joined history), `vw_mechanic_workload`, `vw_low_stock_parts`, `vw_revenue_by_service` — hide join complexity from the application layer. |
-| 2 | **Stored procedures/functions** | `sql/04_procedures.sql` | `sp_book_appointment` (validated insert), `sp_complete_appointment_and_bill` (multi-step business logic wrapped in a transaction), `fn_customer_lifetime_spend` (reusable scalar function used in reporting queries). |
-| 3 | **Triggers** | `sql/05_triggers.sql` | Auto-deduct stock on part use, reject inserts that would oversell stock, restore stock on deletion, award loyalty points on payment — enforcing business rules the application layer cannot bypass. |
-| 4 | **Transactions** | `sql/06_transactions_demo.sql`, and inside `sp_complete_appointment_and_bill` | Demonstrates atomicity: a multi-statement operation either fully commits or fully rolls back (tested live — see §9). |
-| 5 | **Indexing (incl. full-text)** | `sql/01_schema.sql` | B-tree indexes on common filter columns (`vehicle_id, status`, `scheduled_date`, `specialization`, `stock_qty`) and a `FULLTEXT` index on `complaint_notes`/`diagnosis_notes` for keyword search, complementing the vector search for semantic search. |
+![Relational schema](Relational_Schema.png)
 
-## 8. Key design decisions (and why)
+Textual form (PK underlined in the diagram; FK → referenced table):
 
-- **`users` + role-specific extension tables**, instead of one giant
-  table with a `role` column and lots of nullable fields (e.g.
-  `specialization` for a customer would always be NULL). This is
-  standard normalization for "supertype/subtype" relationships and
-  keeps each table's columns meaningful for every row.
-- **`price_at_use` snapshot in `appointment_parts`** rather than
-  always joining to `spare_parts.unit_price`. Part prices change over
-  time; historical invoices must reflect the price *at the time the
-  part was used*, not today's price. This is a common real-world
-  billing correctness bug if overlooked.
-- **`ServiceHistory` implemented as a VIEW (`vw_service_history`),
-  not a stored table.** Storing service history separately would
-  duplicate data already present in `service_appointments` +
-  related tables, risking the two going out of sync. A view keeps a
-  single source of truth and is always current.
-- **Junction tables carry extra attributes** (`role_in_job` on
-  `appointment_mechanics`, `quantity_used`/`price_at_use` on
-  `appointment_parts`) rather than being bare M:M link tables — this
-  is what "M:M with attributes" looks like in a real schema, not just
-  a toy join table.
-- **`ON DELETE CASCADE` vs `ON DELETE RESTRICT`** chosen per
-  relationship's real-world meaning: deleting a vehicle should cascade
-  to its appointments (the appointments are meaningless without the
-  vehicle), but deleting a spare part or service type that has been
-  used historically is **restricted** — you should not be able to
-  silently delete a part type that appears in past invoices.
+```
+users(user_id PK, full_name, email UQ, password_hash, role, phone, is_active, created_at, last_login_at)
+customers(customer_id PK, user_id FK→users UQ, address, city, loyalty_points)
+mechanics(mechanic_id PK, user_id FK→users UQ, specialization, hourly_rate, is_available)
+vehicles(vehicle_id PK, customer_id FK→customers, registration_no UQ, make, model, year, fuel_type, odometer_km, created_at)
+service_types(service_type_id PK, name UQ, description, base_price, est_duration_min)
+spare_parts(part_id PK, part_name, part_code UQ, unit_price, stock_qty, reorder_level)
+service_appointments(appointment_id PK, vehicle_id FK→vehicles, service_type_id FK→service_types, scheduled_date, completed_date,
+                     status, priority, complaint_notes, diagnosis_notes, created_at)
+appointment_mechanics(appointment_id PK,FK→service_appointments, mechanic_id PK,FK→mechanics, role_in_job, assigned_at)
+appointment_parts(appointment_id PK,FK→service_appointments, part_id PK,FK→spare_parts, quantity_used, price_at_use)
+invoices(invoice_id PK, appointment_id FK→service_appointments UQ, labor_cost, parts_cost, tax_amount, total_amount, payment_status, issued_at)
+appointment_status_log(log_id PK, appointment_id FK, old_status, new_status, changed_at)      -- audit, written by trigger
+part_restock_log(restock_id PK, part_id FK, quantity_added, restocked_at)                      -- audit, written by procedure
+```
 
-## 9. Verification performed
+Normalisation: all tables are in 3NF. M:N relationships are resolved through junction tables; `price_at_use` deliberately snapshots the part
+price at time of use so later price changes do not alter past invoices.
 
-All SQL in this project was executed against a live MySQL-compatible
-server (MariaDB 10.11, wire/SQL-compatible with the target MySQL 8.4)
-during development — not just written and assumed correct:
+## 8. Entities, keys, relationships and constraints
 
-- Schema created cleanly with all constraints (`01_schema.sql`).
-- Sample data loaded without constraint violations (`02_sample_data.sql`).
-- All 4 views return correctly joined/aggregated results.
-- Stock triggers tested for all 3 cases: normal deduction, rejection on
-  insufficient stock (`ERROR 1644 (45000): Insufficient stock...`), and
-  restoration on delete.
-- Loyalty-points trigger tested: confirmed points increased by
-  `FLOOR(total_amount/100)` only when `payment_status` transitions to `'paid'`.
-- `sp_book_appointment` tested for both valid input and invalid
-  `vehicle_id` (clean `SIGNAL SQLSTATE` error, no partial insert).
-- `sp_complete_appointment_and_bill` tested end-to-end: appointment
-  marked completed, invoice auto-generated with correct labor+parts+tax math.
-- Transaction rollback tested for real: a multi-statement transaction
-  that fails partway (oversell attempt) leaves **zero** trace of the
-  earlier, otherwise-valid `INSERT` — proving atomicity, not just
-  claiming it.
-- Vector search tested with 3 out-of-vocabulary style queries; each
-  correctly retrieved the semantically matching appointment as the
-  top (lowest-distance) result.
+Column-level detail is in `DATA_DICTIONARY.md`.
 
-Note: MariaDB was used as a locally-runnable stand-in for MySQL during
-this build/test cycle because a MySQL 8 server package was unavailable
-in this sandboxed environment; `01_schema.sql` targets MySQL 8.4
-syntax (e.g. `utf8mb4_0900_ai_ci` collation) as that's the student's
-actual environment. Everything used here (DDL, triggers, procedures,
-functions, transactions, FULLTEXT index) is standard MySQL-compatible
-SQL and should run unmodified on MySQL 8.4.
+**Relationships:** users 1—0..1 customers; users 1—0..1 mechanics; customers 1—N vehicles; vehicles 1—N appointments;
+service_types 1—N appointments; appointments 1—1 invoices; appointments M—N mechanics; appointments M—N spare_parts.
+Foreign keys use `ON UPDATE CASCADE` and either `RESTRICT` (financial / ownership data) or `CASCADE` (dependent rows and logs).
+
+**Constraints:**
+- NOT NULL, DEFAULT, UNIQUE (`email`, `registration_no`, `part_code`, `service_types.name`, `invoices.appointment_id`).
+- ENUMs: user role, appointment status, priority, fuel type, payment status.
+- CHECKs: `chk_users_phone`, `chk_loyalty_nonneg`, `chk_hourly_rate`, `chk_vehicle_year` (1950–2100), `chk_service_price`,
+  `chk_part_price`, `chk_stock_nonneg`, `chk_appt_dates` (completed ≥ scheduled), `chk_qty_positive`, `chk_amounts_nonneg`, `chk_restock_qty`.
+- Triggers enforcing rules CHECK cannot express (see §9).
+
+## 9. SQL implementation
+
+| File | Contents |
+|---|---|
+| `01_schema.sql` | DROP DATABASE IF EXISTS, CREATE DATABASE/TABLE, PK/FK, constraints, indexes, FULLTEXT |
+| `02_sample_data.sql`, `10_extra_sample_data.sql` | INSERT sample data |
+| `03_views.sql` | `vw_service_history`, `vw_mechanic_workload`, `vw_low_stock_parts`, `vw_revenue_by_service` |
+| `04_procedures.sql` | `sp_book_appointment`, `sp_complete_appointment_and_bill`, function `fn_customer_lifetime_spend` |
+| `05_triggers.sql` | `trg_deduct_stock_after_part_use`, `trg_check_stock_before_part_use`, `trg_restore_stock_after_part_delete`, `trg_award_loyalty_on_payment` |
+| `06_transactions_demo.sql` | COMMIT demo and ROLLBACK demo (atomicity) |
+| `07_queries.sql` | 12 queries (see §11) |
+| `08_alter_and_extensions.sql` | ALTER TABLE (priority, last_login_at, CHECK), DROP INDEX / CREATE INDEX, two audit tables, triggers `trg_log_appointment_status`, `trg_prevent_mechanic_double_booking`, `trg_vehicle_odometer_no_rollback`, view `vw_dashboard_kpis` |
+| `09_app_procedures.sql` | 10 procedures used by the API: register customer, create staff, assign mechanic, start / finish job, add / remove part, cancel, pay invoice, restock |
+| `00_install_all.sql` | runs everything in the right order |
+
+**Advanced features demonstrated (8 of the listed concepts; 4 required):** transactions, views, stored procedures/functions, triggers,
+indexing, full-text search, vector similarity search, and the application's use of transactions inside procedures.
+
+**DDL coverage:** CREATE, ALTER, DROP (tables, indexes), PK/FK, constraints, indexes, views.
+**DML coverage:** INSERT, UPDATE, DELETE, SELECT through both the SQL files and the application's API.
 
 ## 10. Vector database design (Chroma)
 
-- **Data embedded**: `complaint_notes` + `diagnosis_notes`, concatenated
-  per appointment.
-- **Embedding approach**: designed for a sentence-transformer model
-  (`all-MiniLM-L6-v2` via Chroma's default embedding function) which
-  captures semantic meaning, not just shared keywords. See
-  `vector/semantic_search.py` docstring for a note on a network
-  restriction encountered in the build sandbox and the offline
-  TF-IDF stand-in used there for testing — swap back to the
-  sentence-transformer default on a normal machine with internet access.
-- **Storage**: Chroma `PersistentClient`, one collection
-  (`service_notes`), one document per appointment, metadata =
-  `{appointment_id, registration_no, vehicle}` for joining back to MySQL.
-- **Similarity metric**: cosine similarity (Chroma/HNSW default for
-  text embeddings).
-- **Retrieval**: top-k nearest neighbours to a query string typed by
-  staff (e.g. "customer says grinding noise from brakes"); the
-  returned `appointment_id` is used to pull full context back from
-  MySQL (vehicle, mechanic, invoice) via a normal join query.
+| Aspect | Design |
+|---|---|
+| Collection | `service_notes` (one collection, persistent local store `vector/chroma_data/`) |
+| Document | one per appointment that has a complaint: `"<service name>. <complaint_notes>. <diagnosis_notes>"` |
+| Document id | `appointment_id` as a string (primary key link back to MySQL) |
+| Metadata | `appointment_id`, `registration_no`, `vehicle` ("Make Model"), `service_name`, `status` |
+| Embedding model | `all-MiniLM-L6-v2` sentence-transformer (384 dimensions, ONNX via Chroma's default function); vectors computed in the service and passed to Chroma |
+| Fallback | TF-IDF (scikit-learn) only if the model cannot be downloaded; `/health` and the UI flag it as `degraded` because it matches words, not meaning |
+| Index | HNSW approximate-nearest-neighbour index, **cosine** distance set explicitly (`hnsw:space = cosine`) |
+| Similarity | `similarity = 1 − cosine_distance`; hits below `MIN_SIMILARITY` (default 0.2) are discarded |
+| Retrieval | query text → embed → top-k nearest → join the returned `appointment_id`s to `vw_service_history` in MySQL for full context |
+| Hybrid mode | vector top-20 and MySQL FULLTEXT top-20 merged with reciprocal-rank fusion |
+| Freshness | `POST /index/{id}` after an appointment is booked or its diagnosis changes; `POST /reindex` rebuilds from MySQL |
+| Interface | FastAPI on 127.0.0.1:8001: `/health`, `/search`, `/index/{id}`, `/reindex`; optional shared-secret header |
 
-## 11. Future enhancements
+MySQL remains the source of truth: Chroma can be deleted and rebuilt at any time. If the vector service is down, the API falls back to
+FULLTEXT and tells the user.
 
-- Next.js web application (planned next phase) with role-based views
-  for Admin / Staff(Mechanic) / Customer.
-- Authentication via hashed passwords (bcrypt/argon2) and JWT or
-  session-based auth in the API layer; `users.password_hash` is
-  already sized/typed for this.
-- Real sentence-transformer embeddings in production (swap-in, see §10).
-- Appointment scheduling conflict checks (e.g. don't double-book a
-  mechanic at the same time).
-- Automated low-stock reorder notifications from `vw_low_stock_parts`.
+## 11. Important queries (`sql/07_queries.sql`)
+
+| # | Purpose | Concepts |
+|---|---|---|
+| Q1 | Vehicles of a customer | JOIN |
+| Q2 | Revenue per month | aggregate, GROUP BY, ORDER BY |
+| Q3 | Mechanics with more than one completed job | GROUP BY, HAVING |
+| Q4 | Customers spending above the average | subquery |
+| Q5 | Vehicles never serviced | correlated NOT EXISTS |
+| Q6 | Parts below reorder level | view |
+| Q7 | Most used parts | JOIN, GROUP BY, LIMIT |
+| Q8 | Diagnoses mentioning "brake" | FULLTEXT MATCH … AGAINST |
+| Q9 | Each customer's latest appointment | correlated subquery |
+| Q10 | Revenue by service type | view |
+| Q11 | Mark a mechanic unavailable | UPDATE |
+| Q12 | Remove a mechanic assignment | DELETE |
+
+The admin Reports tab runs 12 further whitelisted reports (`frontend/src/lib/reports.ts`) over the same schema.
+
+## 12. System architecture
+
+![Architecture](architecture.png)
+
+Browser → Next.js UI → Next.js API route handlers → MySQL (mysql2 pool). Search requests go from the API to the FastAPI service, which queries
+Chroma. The browser never talks to either database.
+
+- **Configuration:** all credentials come from environment variables (`frontend/.env.local`, git-ignored; `.env.example` committed).
+- **Authentication:** bcrypt hashes; login issues an HMAC-signed httpOnly, SameSite=Lax cookie; 5 failed attempts per 15 minutes are throttled; no default password in code.
+- **Authorization:** every route is wrapped by `route({roles})`, which verifies the cookie, the role, and that `users.is_active` is still 1. Customers' data is filtered by their own customer id on the server.
+- **Validation:** API-layer validators plus database CHECKs, UNIQUE/FK constraints, triggers and procedures. A `SIGNAL` raised in MySQL reaches the UI as the database's own message (HTTP 422).
+- **Security:** parameterised queries only; report SQL is a fixed whitelist; security headers in `next.config.ts`.
+
+## 13. Application screenshots
+
+Screenshots must be taken from the running application (see `docs/screenshots/README.md` for the exact list). Insert them here:
+
+| Screen | File |
+|---|---|
+| Login | `screenshots/01_login.png` |
+| Customer: vehicles | `screenshots/02_customer_vehicles.png` |
+| Customer: book appointment | `screenshots/03_customer_booking.png` |
+| Mechanic: job detail with parts | `screenshots/04_staff_job.png` |
+| Trigger rejecting overselling | `screenshots/05_oversell_error.png` |
+| Admin: dashboard | `screenshots/06_admin_dashboard.png` |
+| Search: semantic vs keyword | `screenshots/07_search_compare.png` |
+| Admin: reports | `screenshots/08_admin_reports.png` |
+| `npm run test:api` output | `screenshots/09_api_tests.png` |
+
+## 14. Testing results
+
+Automated end-to-end suite: `cd frontend && npm run test:api` (app and MySQL running). Record the result in the table below after running it.
+
+| # | Test | Type | Result |
+|---|---|---|---|
+| T1 | Database and procedures reachable (/api/status) | automated | ☐ |
+| T2 | Wrong password rejected | automated | ☐ |
+| T3 | API without a session → 401 | automated | ☐ |
+| T4 | Demo admin / mechanic / customer sign in | automated | ☐ |
+| T5 | Customer calls an admin API → 403 | automated | ☐ |
+| T6 | Mechanic calls admin / customer API → 403 | automated | ☐ |
+| T7 | Registration through stored procedure; no master password | automated | ☐ |
+| T8 | Weak password / bad e-mail → 400 | automated | ☐ |
+| T9 | Add vehicle; duplicate plate → 409 (UNIQUE) | automated | ☐ |
+| T10 | Vehicle year 1800 → rejected (CHECK) | automated | ☐ |
+| T11 | Odometer cannot go backwards → 422 (trigger) | automated | ☐ |
+| T12 | Customer cannot touch another customer's vehicle → 404 | automated | ☐ |
+| T13 | Book appointments (procedure); past date rejected | automated | ☐ |
+| T14 | Assign mechanic; overlapping job rejected (double-booking trigger) | automated | ☐ |
+| T15 | Cancel only while scheduled; second cancel → 422 | automated | ☐ |
+| T16 | Mechanic sees own job; another's job → 404 | automated | ☐ |
+| T17 | Stock deducted on use, overselling rejected, stock restored on removal (triggers) | automated | ☐ |
+| T18 | Complete job → invoice = labour + parts + 5% tax (procedure + transaction) | automated | ☐ |
+| T19 | Pay invoice → loyalty points awarded; cannot pay twice | automated | ☐ |
+| T20 | Admin dashboard (views, function) and all 12 reports run | automated | ☐ |
+| T21 | Restock writes audit row; deleting a used part blocked (FK RESTRICT → 409) | automated | ☐ |
+| T22 | Deactivated account locked out immediately | automated | ☐ |
+| T23 | Keyword (FULLTEXT) and semantic (Chroma, or labelled fallback) search | automated | ☐ |
+| T24 | Sign out ends the session | automated | ☐ |
+| T25 | Login throttle: 6th wrong password in 15 min → 429 | manual | ☐ |
+| T26 | Semantic query with no shared words ranks the right note first (`selftest.py`, Search page) | manual | ☐ |
+| T27 | Stop the vector service → search falls back to FULLTEXT with a notice | manual | ☐ |
+| T28 | `06_transactions_demo.sql`: COMMIT demo persists, ROLLBACK demo leaves no trace | manual | ☐ |
+
+Unit checks of token signing/tampering/expiry, input validators and DB-error mapping (15 checks) passed during development.
+
+> **Note for the team:** the ☐ marks must be replaced with the real results from your own run. Do not submit this table unfilled.
+
+## 15. Conclusion and future enhancements
+
+AutoCare keeps structured service data in MySQL, where constraints, triggers, procedures and transactions guarantee consistency, and uses
+a vector index only where it is clearly needed — matching free-text complaints by meaning. The Next.js application exposes this through
+authenticated, role-based pages and an API layer that never hard-codes credentials.
+
+Future work: payment gateway, SMS/e-mail reminders, automatic reorder of low-stock parts, appointment-slot calendar, fine-tuned or
+domain-specific embeddings, incremental vector sync driven by database change events, and refresh-token based sessions.
+
+## Team contributions
+
+| Member | Responsibilities |
+|---|---|
+| Person 1 | _(fill in: e.g. schema, sample data, views, procedures, triggers, vector prototype)_ |
+| Person 2 | _(fill in: e.g. Next.js UI, API layer, authentication, tests, documentation)_ |
