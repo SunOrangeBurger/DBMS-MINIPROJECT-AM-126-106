@@ -174,7 +174,7 @@ the API and role-based UI make both safely usable in a realistic workflow.
 | Requirement | Where |
 |---|---|
 | ER diagram, relational schema | `docs/DBMS_MINIPROJECT_ER.drawio.png`, `docs/DBMS_MINIPROJECT_ER-REL.drawio.png`, `docs/DESIGN_DOCUMENT.md`, `sql/01_schema.sql` |
-| DDL / DML / queries | `sql/01`–`07`, `08_alter_and_extensions.sql` |
+| DDL / DML / queries | `sql/README.md`, `sql/01`–`07`, `08_alter_and_extensions.sql` |
 | ≥4 advanced features | views, stored procedures + function, triggers (8), transactions, indexes incl. FULLTEXT |
 | Vector DB + justification | `vector/`, `docs/DESIGN_DOCUMENT.md` §4, §10 |
 | Web UI + API layer | `frontend/src/app`, `frontend/src/app/api` |
