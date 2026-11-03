@@ -53,7 +53,7 @@ def index() -> SemanticIndex:
     return _state["index"]
 
 
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(require_token)])
 def health():
     idx = index()
     return {
@@ -71,7 +71,7 @@ def health():
 def search(
     q: str = Query(..., min_length=2, max_length=500),
     k: int = Query(5, ge=1, le=20),
-    min_similarity: float = Query(None, ge=0, le=1),
+    min_similarity: float | None = Query(None, ge=0, le=1),
 ):
     idx = index()
     if idx.count() == 0:  # index was built before the data existed (or MySQL was down): try once more

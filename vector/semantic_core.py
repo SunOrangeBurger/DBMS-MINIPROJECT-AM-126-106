@@ -28,6 +28,7 @@ RETRIEVAL
     appointment_ids back to MySQL (vw_service_history) for the full context.
 """
 import os
+from uuid import uuid4
 
 import chromadb
 import mysql.connector
@@ -44,6 +45,9 @@ def get_mysql_connection():
         user=os.environ.get("DB_USER", "root"),
         password=os.environ.get("DB_PASSWORD", ""),
         database=os.environ.get("DB_NAME", "autocare"),
+        # Do not make FastAPI startup or /reindex hang indefinitely when MySQL
+        # is down or the host is wrong. mysql-connector expects whole seconds.
+        connection_timeout=max(1, int(os.environ.get("DB_CONNECT_TIMEOUT", "5"))),
     )
 
 
@@ -147,7 +151,7 @@ class SemanticIndex:
         self.persist_path = persist_path or os.environ.get("CHROMA_PATH", "./chroma_data")
         self.client = chromadb.PersistentClient(path=self.persist_path)
         self.embedder = make_embedder(mode)
-        self.collection = self._new_collection()
+        self.collection = self._get_or_create_collection()
         self.last_error = None
         # Minimum cosine similarity for a hit to be returned (weak matches are noise).
         default_min = "0.05" if isinstance(self.embedder, TfidfEmbedder) else "0.2"
@@ -163,21 +167,28 @@ class SemanticIndex:
         """True when the real sentence-embedding model is NOT in use."""
         return isinstance(self.embedder, TfidfEmbedder)
 
-    def _new_collection(self):
+    def _create_collection(self, name=COLLECTION_NAME):
+        """Create a cosine collection across supported Chroma versions."""
+        metadata = {"embedding_model": self.embedder.name}
         try:
-            self.client.delete_collection(COLLECTION_NAME)
-        except Exception:
-            pass
-        # Ask for cosine distance. Newer Chroma versions prefer `configuration`, older ones
-        # use the "hnsw:space" metadata key; try both so the setting is never silently ignored.
+            return self.client.create_collection(
+                name=name,
+                configuration={"hnsw": {"space": "cosine"}},
+                metadata=metadata,
+            )
+        except (TypeError, ValueError):
+            # Chroma < 0.6 has no `configuration` argument.
+            return self.client.create_collection(
+                name=name,
+                metadata={**metadata, "hnsw:space": "cosine"},
+            )
+
+    def _get_or_create_collection(self):
+        """Open the persisted index without deleting it during service startup."""
         try:
-            col = self.client.create_collection(
-                name=COLLECTION_NAME, configuration={"hnsw": {"space": "cosine"}}
-            )
+            col = self.client.get_collection(COLLECTION_NAME)
         except Exception:
-            col = self.client.create_collection(
-                name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
-            )
+            col = self._create_collection()
         self.space = self._detect_space(col)
         return col
 
@@ -204,19 +215,45 @@ class SemanticIndex:
         return 1.0 - d  # cosine distance, or inner-product distance
 
     def rebuild(self):
-        """Re-read every appointment note from MySQL and re-embed it."""
+        """Re-read every note and atomically replace the persisted collection.
+
+        Fetching and embedding happen before the live collection is touched. A
+        temporary MySQL outage or embedding failure therefore leaves the last
+        working search index available instead of erasing it.
+        """
         rows = fetch_notes()
         docs = [combined_text(r) for r in rows]
-        self.collection = self._new_collection()
-        self.last_error = None
         if docs:
             self.embedder.fit(docs)
-            self.collection.add(
+            embeddings = self.embedder.encode(docs)
+        else:
+            embeddings = []
+
+        suffix = uuid4().hex[:12]
+        stage_name = f"service_notes_stage_{suffix}"
+        backup_name = f"service_notes_backup_{suffix}"
+        stage = self._create_collection(stage_name)
+        if docs:
+            stage.add(
                 ids=[str(r["appointment_id"]) for r in rows],
                 documents=docs,
-                embeddings=self.embedder.encode(docs),
+                embeddings=embeddings,
                 metadatas=[metadata_for(r) for r in rows],
             )
+
+        old = self.collection
+        old.modify(name=backup_name)
+        try:
+            stage.modify(name=COLLECTION_NAME)
+        except Exception:
+            old.modify(name=COLLECTION_NAME)
+            self.client.delete_collection(stage_name)
+            raise
+
+        self.collection = self.client.get_collection(COLLECTION_NAME)
+        self.space = self._detect_space(self.collection)
+        self.client.delete_collection(backup_name)
+        self.last_error = None
         return len(docs)
 
     def upsert(self, appointment_id):

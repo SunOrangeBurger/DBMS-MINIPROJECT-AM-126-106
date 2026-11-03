@@ -34,28 +34,41 @@ SELECT 'Demo A committed. New appointment:' AS note, @last_appt AS appointment_i
 -- stock (6). The trg_check_stock_before_part_use trigger raises
 -- SQLSTATE 45000 on the appointment_parts insert.
 --
--- IMPORTANT: because both statements run inside the SAME transaction,
--- the earlier, otherwise-valid INSERT into service_appointments is
--- rolled back too, even though only the second statement failed.
--- Verified behaviour: running this as a batch (mysql < file.sql),
--- the error aborts the session before COMMIT is reached, and MySQL/
--- MariaDB auto-rolls-back the open transaction -- the appointment
--- row never appears in the table. In application code (e.g. a
--- Node/Next.js API route), the equivalent is an explicit
--- try { ...queries... ; COMMIT } catch { ROLLBACK }.
+-- The EXIT HANDLER is the SQL equivalent of application code's
+-- try { ...queries...; COMMIT } catch { ROLLBACK }. It makes the rollback
+-- explicit and reliable even when a SQL client is configured to continue
+-- after statement errors.
 -- ------------------------------------------------------------
-START TRANSACTION;
+DROP PROCEDURE IF EXISTS demo_failed_transaction;
+DELIMITER //
+CREATE PROCEDURE demo_failed_transaction()
+BEGIN
+    DECLARE v_fail_appt INT DEFAULT NULL;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET @fail_appt := v_fail_appt;
+        SET @rollback_observed := 1;
+    END;
 
-INSERT INTO service_appointments (vehicle_id, service_type_id, scheduled_date, complaint_notes, status)
-VALUES (4, 4, '2026-09-26 09:00:00', 'Testing rollback scenario', 'scheduled');
+    SET @rollback_observed := 0;
+    START TRANSACTION;
 
-SET @fail_appt := LAST_INSERT_ID();
+    INSERT INTO service_appointments (vehicle_id, service_type_id, scheduled_date, complaint_notes, status)
+    VALUES (4, 4, '2026-09-26 09:00:00', 'Testing rollback scenario', 'scheduled');
 
-INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-VALUES (@fail_appt, 5, 500, 4200.00);   -- exceeds stock -> trigger raises error -> transaction aborts
+    SET v_fail_appt := LAST_INSERT_ID();
 
-COMMIT;
+    INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
+    VALUES (v_fail_appt, 5, 500, 4200.00);   -- exceeds stock -> trigger raises error
 
--- If the script reaches this point, prove nothing leaked:
-SELECT 'Demo B: appointment should NOT exist after rollback' AS note, @fail_appt AS attempted_id;
+    COMMIT;
+END //
+DELIMITER ;
+
+CALL demo_failed_transaction();
+DROP PROCEDURE demo_failed_transaction;
+
+SELECT 'Demo B rolled back after the stock trigger rejected 500 batteries' AS note,
+       @fail_appt AS attempted_id, @rollback_observed AS rollback_observed;
 SELECT COUNT(*) AS should_be_zero FROM service_appointments WHERE appointment_id = @fail_appt;

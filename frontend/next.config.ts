@@ -2,6 +2,10 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Node 24 can close the detached CLI type-checker's stdout before Next reads
+  // `tsc --showConfig`. The compiler API is the documented stable path for
+  // TypeScript 5/6 and keeps production builds deterministic.
+  experimental: { useTypeScriptCli: false },
   async headers() {
     return [
       {

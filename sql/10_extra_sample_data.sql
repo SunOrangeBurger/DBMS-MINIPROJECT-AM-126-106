@@ -25,10 +25,12 @@ VALUES (2, 1, '2026-06-12 10:00:00', '2026-06-12 10:30:00', 'completed',
         'Routine oil and filter change. Oil level and colour were normal.');
 SET @a := LAST_INSERT_ID();
 INSERT INTO appointment_mechanics (appointment_id, mechanic_id, role_in_job) VALUES (@a, 1, 'lead');
+SELECT part_id, unit_price INTO @part, @price FROM spare_parts WHERE part_code = 'OIL-5W30';
 INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-SELECT @a, part_id, 4, unit_price FROM spare_parts WHERE part_code = 'OIL-5W30';
+VALUES (@a, @part, 4, @price);
+SELECT part_id, unit_price INTO @part, @price FROM spare_parts WHERE part_code = 'FLT-OIL01';
 INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-SELECT @a, part_id, 1, unit_price FROM spare_parts WHERE part_code = 'FLT-OIL01';
+VALUES (@a, @part, 1, @price);
 INSERT INTO invoices (appointment_id, labor_cost, parts_cost, tax_amount, total_amount, payment_status, issued_at)
 VALUES (@a, 800.00, 1980.00, 139.00, 2919.00, 'paid', '2026-06-12 10:30:00');
 
@@ -39,8 +41,9 @@ VALUES (3, 2, '2026-06-28 09:00:00', '2026-06-28 09:45:00', 'completed',
         'Front brake discs were warped. Resurfaced the discs and replaced the front brake pads.');
 SET @a := LAST_INSERT_ID();
 INSERT INTO appointment_mechanics (appointment_id, mechanic_id, role_in_job) VALUES (@a, 3, 'lead');
+SELECT part_id, unit_price INTO @part, @price FROM spare_parts WHERE part_code = 'BRK-PAD-F';
 INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-SELECT @a, part_id, 1, unit_price FROM spare_parts WHERE part_code = 'BRK-PAD-F';
+VALUES (@a, @part, 1, @price);
 INSERT INTO invoices (appointment_id, labor_cost, parts_cost, tax_amount, total_amount, payment_status, issued_at)
 VALUES (@a, 600.00, 1200.00, 90.00, 1890.00, 'paid', '2026-06-28 09:45:00');
 
@@ -61,8 +64,9 @@ VALUES (5, 3, '2026-10-05 10:00:00', '2026-10-05 13:00:00', 'completed',
         'Spark plug was fouled and the chain was slack. Replaced the spark plug, adjusted and lubricated the chain.');
 SET @a := LAST_INSERT_ID();
 INSERT INTO appointment_mechanics (appointment_id, mechanic_id, role_in_job) VALUES (@a, 1, 'lead');
+SELECT part_id, unit_price INTO @part, @price FROM spare_parts WHERE part_code = 'SPK-PLUG';
 INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-SELECT @a, part_id, 1, unit_price FROM spare_parts WHERE part_code = 'SPK-PLUG';
+VALUES (@a, @part, 1, @price);
 INSERT INTO invoices (appointment_id, labor_cost, parts_cost, tax_amount, total_amount, payment_status, issued_at)
 VALUES (@a, 3500.00, 150.00, 182.50, 3832.50, 'pending', '2026-10-05 13:00:00');
 
@@ -73,8 +77,9 @@ VALUES (1, 5, '2026-10-12 14:00:00', '2026-10-12 15:00:00', 'completed',
         'Cabin filter was clogged and refrigerant was slightly low. Cleaned the evaporator and refilled 1 kg of refrigerant.');
 SET @a := LAST_INSERT_ID();
 INSERT INTO appointment_mechanics (appointment_id, mechanic_id, role_in_job) VALUES (@a, 1, 'lead');
+SELECT part_id, unit_price INTO @part, @price FROM spare_parts WHERE part_code = 'AC-GAS-01';
 INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-SELECT @a, part_id, 1, unit_price FROM spare_parts WHERE part_code = 'AC-GAS-01';
+VALUES (@a, @part, 1, @price);
 INSERT INTO invoices (appointment_id, labor_cost, parts_cost, tax_amount, total_amount, payment_status, issued_at)
 VALUES (@a, 1200.00, 650.00, 92.50, 1942.50, 'pending', '2026-10-12 15:00:00');
 
@@ -85,8 +90,9 @@ VALUES (2, 4, '2026-10-20 08:30:00', '2026-10-20 08:50:00', 'completed',
         'Alternator output was normal but the battery capacity was weak. Replaced the battery.');
 SET @a := LAST_INSERT_ID();
 INSERT INTO appointment_mechanics (appointment_id, mechanic_id, role_in_job) VALUES (@a, 2, 'lead');
+SELECT part_id, unit_price INTO @part, @price FROM spare_parts WHERE part_code = 'BAT-45AH';
 INSERT INTO appointment_parts (appointment_id, part_id, quantity_used, price_at_use)
-SELECT @a, part_id, 1, unit_price FROM spare_parts WHERE part_code = 'BAT-45AH';
+VALUES (@a, @part, 1, @price);
 INSERT INTO invoices (appointment_id, labor_cost, parts_cost, tax_amount, total_amount, payment_status, issued_at)
 VALUES (@a, 400.00, 4200.00, 230.00, 4830.00, 'paid', '2026-10-20 08:50:00');
 

@@ -48,6 +48,10 @@ function expectStatus(res, status, what) { expect(res.status === status, `${what
 
 const stamp = Date.now();
 const farDay = (days, hhmm) => { const d = new Date(Date.now() + days * 86400000); return `${d.toISOString().slice(0, 10)}T${hhmm}`; };
+const localDateTime = (date) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
 
 const anon = new Client(), admin = new Client(), staff = new Client(), cust = new Client();
 const state = {};
@@ -116,7 +120,10 @@ await test("OWNERSHIP: a customer cannot touch another customer's vehicle (404)"
 });
 
 let apptA, apptB;
-const slot = farDay(500, '05:00');
+// Use a near-future slot: booking validation still sees a future time, while
+// the mechanic workflow can legitimately complete it a few seconds later.
+const slotTime = new Date(Date.now() + 5_000);
+const slot = localDateTime(slotTime);
 await test('PROCEDURE: book appointments (sp_book_appointment); past date rejected', async () => {
   const c = state.cust;
   const svc = (await c.get('/api/service-types')).data.services.find((s) => s.name === 'Oil Change');
@@ -151,6 +158,8 @@ await test('MECHANIC: sees the job; cannot open a job that is not theirs (404)',
 });
 
 await test('TRIGGERS: stock deducted on use, overselling rejected, stock restored on removal', async () => {
+  const untilServiceTime = slotTime.getTime() - Date.now() + 100;
+  if (untilServiceTime > 0) await new Promise((resolve) => setTimeout(resolve, untilServiceTime));
   expectStatus(await staff.post(`/api/staff/jobs/${apptA}/start`), 200, 'start job');
   const stock = async () => (await staff.get('/api/parts')).data.parts.find((p) => p.part_code === 'OIL-5W30');
   const before = (await stock()).stock_qty;

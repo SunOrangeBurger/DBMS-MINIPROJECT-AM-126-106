@@ -67,14 +67,14 @@ Keyword and Hybrid modes to demonstrate the difference.
 
 ## 6. ER diagram
 
-![ER diagram](ER_diagram.png)
+![ER diagram](DBMS_MINIPROJECT_ER.drawio.png)
 
 Chen notation. `users` is specialised into `customers` and `mechanics` by 1:1 profile tables. The two M:N relationships (`assigned_to`,
 `uses`) carry their own attributes and become junction tables in the relational schema.
 
 ## 7. Relational schema
 
-![Relational schema](Relational_Schema.png)
+![Relational schema](DBMS_MINIPROJECT_ER-REL.drawio.png)
 
 Textual form (PK underlined in the diagram; FK → referenced table):
 
@@ -203,42 +203,42 @@ Screenshots must be taken from the running application (see `docs/screenshots/RE
 
 ## 14. Testing results
 
-Automated end-to-end suite: `cd frontend && npm run test:api` (app and MySQL running). Record the result in the table below after running it.
+Automated end-to-end suite: `cd frontend && npm run test:api` (app and MySQL running).
+Results below were verified on 2026-11-03 against a clean, disposable MySQL 8.4 database and the real MiniLM/Chroma service.
 
 | # | Test | Type | Result |
 |---|---|---|---|
-| T1 | Database and procedures reachable (/api/status) | automated | ☐ |
-| T2 | Wrong password rejected | automated | ☐ |
-| T3 | API without a session → 401 | automated | ☐ |
-| T4 | Demo admin / mechanic / customer sign in | automated | ☐ |
-| T5 | Customer calls an admin API → 403 | automated | ☐ |
-| T6 | Mechanic calls admin / customer API → 403 | automated | ☐ |
-| T7 | Registration through stored procedure; no master password | automated | ☐ |
-| T8 | Weak password / bad e-mail → 400 | automated | ☐ |
-| T9 | Add vehicle; duplicate plate → 409 (UNIQUE) | automated | ☐ |
-| T10 | Vehicle year 1800 → rejected (CHECK) | automated | ☐ |
-| T11 | Odometer cannot go backwards → 422 (trigger) | automated | ☐ |
-| T12 | Customer cannot touch another customer's vehicle → 404 | automated | ☐ |
-| T13 | Book appointments (procedure); past date rejected | automated | ☐ |
-| T14 | Assign mechanic; overlapping job rejected (double-booking trigger) | automated | ☐ |
-| T15 | Cancel only while scheduled; second cancel → 422 | automated | ☐ |
-| T16 | Mechanic sees own job; another's job → 404 | automated | ☐ |
-| T17 | Stock deducted on use, overselling rejected, stock restored on removal (triggers) | automated | ☐ |
-| T18 | Complete job → invoice = labour + parts + 5% tax (procedure + transaction) | automated | ☐ |
-| T19 | Pay invoice → loyalty points awarded; cannot pay twice | automated | ☐ |
-| T20 | Admin dashboard (views, function) and all 12 reports run | automated | ☐ |
-| T21 | Restock writes audit row; deleting a used part blocked (FK RESTRICT → 409) | automated | ☐ |
-| T22 | Deactivated account locked out immediately | automated | ☐ |
-| T23 | Keyword (FULLTEXT) and semantic (Chroma, or labelled fallback) search | automated | ☐ |
-| T24 | Sign out ends the session | automated | ☐ |
-| T25 | Login throttle: 6th wrong password in 15 min → 429 | manual | ☐ |
-| T26 | Semantic query with no shared words ranks the right note first (`selftest.py`, Search page) | manual | ☐ |
-| T27 | Stop the vector service → search falls back to FULLTEXT with a notice | manual | ☐ |
-| T28 | `06_transactions_demo.sql`: COMMIT demo persists, ROLLBACK demo leaves no trace | manual | ☐ |
+| T1 | Database and procedures reachable (/api/status) | automated | Pass |
+| T2 | Wrong password rejected | automated | Pass |
+| T3 | API without a session → 401 | automated | Pass |
+| T4 | Demo admin / mechanic / customer sign in | automated | Pass |
+| T5 | Customer calls an admin API → 403 | automated | Pass |
+| T6 | Mechanic calls admin / customer API → 403 | automated | Pass |
+| T7 | Registration through stored procedure; no master password | automated | Pass |
+| T8 | Weak password / bad e-mail → 400 | automated | Pass |
+| T9 | Add vehicle; duplicate plate → 409 (UNIQUE) | automated | Pass |
+| T10 | Vehicle year 1800 → rejected (CHECK) | automated | Pass |
+| T11 | Odometer cannot go backwards → 422 (trigger) | automated | Pass |
+| T12 | Customer cannot touch another customer's vehicle → 404 | automated | Pass |
+| T13 | Book appointments (procedure); past date rejected | automated | Pass |
+| T14 | Assign mechanic; overlapping job rejected (double-booking trigger) | automated | Pass |
+| T15 | Cancel only while scheduled; second cancel → 422 | automated | Pass |
+| T16 | Mechanic sees own job; another's job → 404 | automated | Pass |
+| T17 | Stock deducted on use, overselling rejected, stock restored on removal (triggers) | automated | Pass |
+| T18 | Complete job → invoice = labour + parts + 5% tax (procedure + transaction) | automated | Pass |
+| T19 | Pay invoice → loyalty points awarded; cannot pay twice | automated | Pass |
+| T20 | Admin dashboard (views, function) and all 12 reports run | automated | Pass |
+| T21 | Restock writes audit row; deleting a used part blocked (FK RESTRICT → 409) | automated | Pass |
+| T22 | Deactivated account locked out immediately | automated | Pass |
+| T23 | Keyword (FULLTEXT) and semantic (Chroma, or labelled fallback) search | automated | Pass |
+| T24 | Sign out ends the session | automated | Pass |
+| T25 | Login throttle: 6th wrong password in 15 min → 429 | manual | Pass |
+| T26 | Semantic query with no shared words ranks the right note first (`selftest.py`, Search page) | manual | Pass (4/4) |
+| T27 | Stop the vector service → search falls back to FULLTEXT with a notice | manual | Pass |
+| T28 | `06_transactions_demo.sql`: COMMIT demo persists, ROLLBACK demo leaves no trace | manual | Pass (`should_be_zero = 0`) |
 
 Unit checks of token signing/tampering/expiry, input validators and DB-error mapping (15 checks) passed during development.
-
-> **Note for the team:** the ☐ marks must be replaced with the real results from your own run. Do not submit this table unfilled.
+The vector-core suite adds 4 checks for rebuild/search behavior, empty data, connection timeouts and outage-safe persistence.
 
 ## 15. Conclusion and future enhancements
 
