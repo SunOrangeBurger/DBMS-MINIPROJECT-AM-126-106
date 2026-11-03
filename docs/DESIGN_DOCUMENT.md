@@ -253,5 +253,5 @@ domain-specific embeddings, incremental vector sync driven by database change ev
 
 | Member | Responsibilities |
 |---|---|
-| Person 1 | _(fill in: e.g. schema, sample data, views, procedures, triggers, vector prototype)_ |
-| Person 2 | _(fill in: e.g. Next.js UI, API layer, authentication, tests, documentation)_ |
+| Nihira Hassan PES2UG24AM106 | Database design and implementation: ER diagram, relational schema, table creation, primary and foreign keys, constraints, sample data, views, and SQL queries. Worked on database normalisation, schema documentation, customer-side workflows, and MySQL–ChromaDB integration for storing service-history records and retrieving relevant appointment IDs. |
+| Arun Hariharan PES2UG24AM126 | Backend and application implementation: stored procedures, triggers, transaction management, and database extensions. Developed the vector-search prototype using FastAPI and ChromaDB, including embeddings, semantic search, hybrid retrieval, and fallback mechanisms. Worked on the Next.js frontend, authentication, role-based access, application testing, and documentation. |
