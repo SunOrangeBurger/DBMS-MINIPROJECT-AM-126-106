@@ -129,7 +129,7 @@ Primary Key: (appointment_id, part_id)
 | restocked_at	| TIMESTAMP |	DEFAULT CURRENT_TIMESTAMP	| Restock timestamp |
 
 ## Indexes (beyond PK/FK auto-indexes)
-| Index | Name | Table | Columns | Purpose |
+| Index Name | Table | Columns | Purpose |
 |---|---|---|---|
 | idx_vehicle_customer	| vehicles	| customer_id	| Retrieve vehicles belonging to a customer |
 | idx_appt_vehicle_status	| service_appointments	| vehicle_id, status	| Filter appointments by vehicle and status |
