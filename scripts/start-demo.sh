@@ -17,15 +17,21 @@ fail() { printf '[AutoCare] ERROR: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   local code=$?
   trap - EXIT INT TERM
+  local had_services=false
+  [[ -n "$WEB_PID" || -n "$VECTOR_PID" ]] && had_services=true
   [[ -n "$WEB_PID" ]] && kill "$WEB_PID" 2>/dev/null || true
   [[ -n "$VECTOR_PID" ]] && kill "$VECTOR_PID" 2>/dev/null || true
   wait "$WEB_PID" "$VECTOR_PID" 2>/dev/null || true
-  say "Services stopped. Logs remain in $LOG_DIR"
+  if [[ "$had_services" == true ]]; then
+    say "Services stopped. Logs remain in $LOG_DIR"
+  else
+    say "Startup stopped. Diagnostic logs remain in $LOG_DIR"
+  fi
   exit "$code"
 }
 trap cleanup EXIT INT TERM
 
-for command in node npm python3 curl; do
+for command in node npm python3 curl mysql; do
   command -v "$command" >/dev/null || fail "Missing required command: $command"
 done
 
@@ -45,11 +51,18 @@ set +a
 # contains a stale or non-local service URL.
 export VECTOR_SERVICE_URL="http://127.0.0.1:$VECTOR_PORT"
 
-for name in DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME SESSION_SECRET; do
+for name in DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME; do
   [[ -n "${!name:-}" ]] || fail "$name is missing in $ENV_FILE"
 done
-[[ ${#SESSION_SECRET} -ge 32 && "$SESSION_SECRET" != replace-* ]] || \
-  fail "SESSION_SECRET must be a non-placeholder value of at least 32 characters."
+[[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || fail "DB_NAME may contain only letters, numbers and underscores."
+
+if [[ -z "${SESSION_SECRET:-}" || "$SESSION_SECRET" == replace-* ]]; then
+  SESSION_SECRET="$(node -e "process.stdout.write(require('crypto').randomBytes(48).toString('hex'))")"
+  export SESSION_SECRET
+  say "SESSION_SECRET was not configured; generated a secure secret for this local run."
+elif [[ ${#SESSION_SECRET} -lt 32 ]]; then
+  fail "SESSION_SECRET in $ENV_FILE must contain at least 32 characters."
+fi
 
 if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   say "Installing frontend dependencies..."
@@ -60,6 +73,33 @@ if [[ ! -x "$VECTOR_DIR/.venv/bin/python" ]]; then
   say "Creating the semantic-search virtual environment..."
   python3 -m venv "$VECTOR_DIR/.venv"
   "$VECTOR_DIR/.venv/bin/pip" install -r "$VECTOR_DIR/requirements.txt"
+fi
+
+say "Checking the MySQL schema..."
+schema_count="$(
+  MYSQL_PWD="$DB_PASSWORD" mysql --protocol=tcp \
+    --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
+    --batch --skip-column-names \
+    --execute="SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$DB_NAME'" \
+    2>"$LOG_DIR/mysql-check.log"
+)" || {
+  cat "$LOG_DIR/mysql-check.log" >&2
+  fail "Could not connect to MySQL. Check that it is running and verify the DB_* values."
+}
+
+if [[ "$schema_count" == "0" ]]; then
+  [[ "$DB_NAME" == "autocare" ]] || fail "Automatic setup supports DB_NAME=autocare only."
+  say "Database 'autocare' is missing; installing the schema and sample data..."
+  (
+    cd "$ROOT_DIR"
+    MYSQL_PWD="$DB_PASSWORD" mysql --protocol=tcp \
+      --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
+      --execute="SOURCE sql/00_install_all.sql"
+  ) >"$LOG_DIR/mysql-install.log" 2>&1 || {
+    tail -60 "$LOG_DIR/mysql-install.log" >&2
+    fail "Database installation failed. The configured DB_USER needs permission to create the autocare database."
+  }
+  say "Database schema and sample data installed."
 fi
 
 say "Checking MySQL and preparing the demo accounts..."

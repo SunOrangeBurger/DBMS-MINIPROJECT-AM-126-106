@@ -66,9 +66,12 @@ chmod +x scripts/start-demo.sh   # needed only once
 ./scripts/start-demo.sh
 ```
 
-The script checks configuration, installs missing Node/Python dependencies, verifies MySQL by safely seeding demo password hashes,
-waits for the embedding model and both health endpoints, and then prints the login URL. It keeps both services attached to the terminal;
+The script checks configuration, installs missing Node/Python dependencies, installs the schema/sample data only when the `autocare`
+database is absent, safely seeds demo password hashes, waits for the embedding model and both health endpoints, and then prints the login URL.
+It never rebuilds an existing database automatically. It keeps both services attached to the terminal;
 press `Ctrl+C` once to stop them cleanly. Temporary logs are printed on startup and retained after shutdown.
+If `SESSION_SECRET` is absent, the launcher generates a secure process-only value for that local run; set it explicitly in `.env.local`
+when you need sessions to survive a service restart.
 
 If your environment file or ports differ:
 
