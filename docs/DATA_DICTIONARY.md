@@ -86,6 +86,7 @@
 | mechanic_id | INT | PK(composite), FK → mechanics.mechanic_id | Assigned mechanic |
 | role_in_job | VARCHAR(50) | DEFAULT 'assistant'	| lead / assistant |
 | assigned_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP	| Assignment timestamp |
+
 Primary Key: (appointment_id, mechanic_id)
 
 ## appointment_parts 
@@ -95,6 +96,7 @@ Primary Key: (appointment_id, mechanic_id)
 | part_id | INT | PK(composite), FK → spare_parts.part_id, NOT NULL | Used spare part |
 | quantity_used | INT |  DEFAULT 1, CHECK > 0 | Units consumed |
 | price_at_use | DECIMAL(10,2) | NOT NULL | unit_price at time of use |
+
 Primary Key: (appointment_id, part_id)
 
 ## invoices
