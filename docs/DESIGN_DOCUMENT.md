@@ -67,16 +67,13 @@ Keyword and Hybrid modes to demonstrate the difference.
 
 ## 6. ER diagram
 
-![ER diagram](DBMS_MINIPROJECT_ER.drawio.png)
+![ER diagram](DBMS_MiniProject_ER.drawio%20(2).png)
 
-Chen notation. `users` is specialised into `customers` and `mechanics` by 1:1 profile tables. The two M:N relationships (`assigned_to`,
-`uses`) carry their own attributes and become junction tables in the relational schema.
 
 ## 7. Relational schema
 
-![Relational schema](DBMS_MINIPROJECT_ER-REL.drawio.png)
+![Relational schema](DBMS_MiniProject-ER-REL.drawio.png)
 
-Textual form (PK underlined in the diagram; FK → referenced table):
 
 ```
 users(user_id PK, full_name, email UQ, password_hash, role, phone, is_active, created_at, last_login_at)
